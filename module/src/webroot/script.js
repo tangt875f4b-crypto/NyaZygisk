@@ -56,12 +56,16 @@ const I18N = {
     plt_engine: "PLT hook engine",
     plt_engine_hint: "Hook implementation for ZN modules",
     app_exclude: "App exclusion",
-    app_exclude_hint: "Checked user apps load no Zygisk modules. System apps cannot be excluded. Changes take effect the next time the app starts.",
+    app_exclude_hint: "Per app, choose whether modules load normally, load with module mounts hidden, or do not load at all. System apps cannot be changed. Changes take effect the next time the app starts.",
     exclude_unmount: "Unmount for excluded apps",
     exclude_unmount_hint: "Also hide module mounts, like the DenyList",
+    mode_normal: "Normal",
+    mode_unmount_only: "Unmount only",
+    mode_exclude: "Excluded",
     search_apps: "Search name or package",
     user_apps: "User apps",
     filter_all: "All",
+    filter_unmount_only: "Unmount only",
     filter_excluded: "Excluded",
     apps_loading: "Loading apps…",
     apps_failed: "Failed to list apps",
@@ -118,12 +122,16 @@ const I18N = {
     plt_engine: "PLT Hook 引擎",
     plt_engine_hint: "ZN 模組的 PLT Hook 實現",
     app_exclude: "應用排除",
-    app_exclude_hint: "勾選的使用者應用不載入任何 Zygisk 模組。系統應用無法排除；變更於該應用下次啟動時生效。",
+    app_exclude_hint: "可為每個應用選擇：正常載入模組、載入模組但隱藏模組掛載，或完全不載入模組。系統應用無法變更；變更於該應用下次啟動時生效。",
     exclude_unmount: "同時卸載模組掛載",
     exclude_unmount_hint: "對已排除的應用隱藏模組掛載，效果同 DenyList",
+    mode_normal: "正常",
+    mode_unmount_only: "僅還原掛載",
+    mode_exclude: "排除",
     search_apps: "搜尋名稱或套件名",
     user_apps: "使用者應用",
     filter_all: "全部",
+    filter_unmount_only: "僅還原掛載",
     filter_excluded: "已排除",
     apps_loading: "正在載入應用…",
     apps_failed: "無法取得應用清單",
@@ -180,12 +188,16 @@ const I18N = {
     plt_engine: "PLT Hook 引擎",
     plt_engine_hint: "ZN 模块的 PLT Hook 实现",
     app_exclude: "应用排除",
-    app_exclude_hint: "勾选的用户应用不加载任何 Zygisk 模块。系统应用无法排除；更改在该应用下次启动时生效。",
+    app_exclude_hint: "可为每个应用选择：正常加载模块、加载模块但隐藏模块挂载，或完全不加载模块。系统应用无法更改；更改在该应用下次启动时生效。",
     exclude_unmount: "同时卸载模块挂载",
     exclude_unmount_hint: "对已排除的应用隐藏模块挂载，效果同 DenyList",
+    mode_normal: "正常",
+    mode_unmount_only: "仅还原挂载",
+    mode_exclude: "排除",
     search_apps: "搜索名称或包名",
     user_apps: "用户应用",
     filter_all: "全部",
+    filter_unmount_only: "仅还原挂载",
     filter_excluded: "已排除",
     apps_loading: "正在加载应用…",
     apps_failed: "无法获取应用列表",
@@ -214,9 +226,14 @@ let appFilter = "all";
 
 // excludedApps is what the UI shows; savedExcluded is what config.prop holds. initialExcluded
 // is the list when the page opened, used to flag apps that need a restart.
+// unmountOnlyApps mirrors the same three sets for the unmount-only list: apps that load
+// modules normally but get their module mounts reverted.
 let excludedApps = new Set();
 let savedExcluded = new Set();
 let initialExcluded = null;
+let unmountOnlyApps = new Set();
+let savedUnmountOnly = new Set();
+let initialUnmountOnly = null;
 
 // Every config.prop write goes through this chain so concurrent toggles cannot clobber the
 // shared temp file or each other's keys.
@@ -282,10 +299,10 @@ document.addEventListener("DOMContentLoaded", () => {
       renderApps();
     }
   });
-  $("app-list").addEventListener("change", (event) => {
-    const input = event.target;
-    if (input && input.dataset && input.dataset.pkg) {
-      toggleApp(input.dataset.pkg, input.checked);
+  $("app-list").addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-mode]");
+    if (button && button.dataset.pkg && button.dataset.mode) {
+      setAppMode(button.dataset.pkg, button.dataset.mode);
     }
   });
 
@@ -799,6 +816,13 @@ async function refresh(showSuccessToast) {
       if (!initialExcluded) {
         initialExcluded = new Set(savedExcluded);
       }
+      savedUnmountOnly = new Set(
+        (config.unmount_only_apps || "").split(",").map((p) => p.trim()).filter(Boolean),
+      );
+      unmountOnlyApps = new Set(savedUnmountOnly);
+      if (!initialUnmountOnly) {
+        initialUnmountOnly = new Set(savedUnmountOnly);
+      }
     }
 
     if (appsState !== "ready" || showSuccessToast) {
@@ -1001,16 +1025,47 @@ function excludedUserCount() {
   return userApps.filter((app) => excludedApps.has(app.pkg) && !isLocked(app)).length;
 }
 
+function unmountOnlyUserCount() {
+  if (appsState !== "ready") {
+    return unmountOnlyApps.size;
+  }
+  return userApps.filter((app) => unmountOnlyApps.has(app.pkg) && !isLocked(app)).length;
+}
+
+// The mode shown for an app: "exclude", "unmount_only", or "none".
+function appMode(pkg) {
+  if (excludedApps.has(pkg)) {
+    return "exclude";
+  }
+  if (unmountOnlyApps.has(pkg)) {
+    return "unmount_only";
+  }
+  return "none";
+}
+
+// Locked apps can never be on either list as far as the daemon is concerned, so the
+// UI always shows them as normal even if config.prop still names them.
+function displayMode(app) {
+  return isLocked(app) ? "none" : appMode(app.pkg);
+}
+
 function isPending(pkg) {
-  return Boolean(initialExcluded) && excludedApps.has(pkg) !== initialExcluded.has(pkg);
+  if (!initialExcluded || !initialUnmountOnly) {
+    return false;
+  }
+  return excludedApps.has(pkg) !== initialExcluded.has(pkg) ||
+    unmountOnlyApps.has(pkg) !== initialUnmountOnly.has(pkg);
 }
 
 function renderAppCounts() {
   const excluded = excludedUserCount();
-  $("v-excluded-count").textContent = String(excluded);
+  const unmountOnly = unmountOnlyUserCount();
+  // The tab badge counts every app with a non-default mode.
+  $("v-excluded-count").textContent = String(excluded + unmountOnly);
   const filterButtons = $("app-filter").querySelectorAll("button");
   filterButtons[0].textContent = `${t("filter_all")} ${appsState === "ready" ? userApps.length : ""}`.trim();
-  filterButtons[1].textContent = `${t("filter_excluded")} ${excluded}`;
+  filterButtons[1].textContent = `${t("filter_unmount_only")} ${unmountOnly}`;
+  filterButtons[2].textContent = `${t("filter_excluded")} ${excluded}`;
   filterButtons.forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.filter === appFilter));
   });
@@ -1028,9 +1083,11 @@ function renderApps() {
 
   const query = $("app-search").value.trim().toLowerCase();
   const apps = userApps
-    .filter((app) => appFilter === "all" || (excludedApps.has(app.pkg) && !isLocked(app)))
+    .filter((app) => appFilter === "all" ||
+      (appFilter === "excluded" && excludedApps.has(app.pkg) && !isLocked(app)) ||
+      (appFilter === "unmount_only" && unmountOnlyApps.has(app.pkg) && !isLocked(app)))
     .filter((app) => !query || app.pkg.toLowerCase().includes(query) || app.label.toLowerCase().includes(query))
-    .sort((a, b) => (excludedApps.has(b.pkg) - excludedApps.has(a.pkg))
+    .sort((a, b) => ((displayMode(b) !== "none") - (displayMode(a) !== "none"))
       || (a.label || a.pkg).localeCompare(b.label || b.pkg));
 
   if (!apps.length) {
@@ -1039,20 +1096,24 @@ function renderApps() {
     return;
   }
 
+  const modeKeys = { none: "mode_normal", unmount_only: "mode_unmount_only", exclude: "mode_exclude" };
   list.innerHTML = apps.map((app) => {
     const title = app.label || app.pkg;
     const initial = (title.replace(/^[^A-Za-z0-9\p{L}]+/u, "").charAt(0) || "?").toUpperCase();
     const shared = groupOf(app).length - 1;
     const locked = isLocked(app);
+    const mode = displayMode(app);
     let note = "";
     if (locked) {
       note = t("shared_uid_system");
     } else if (shared > 0) {
       note = t("shared_uid", { n: shared });
     }
+    const modeClass = mode === "exclude" ? " mode-exclude" : (mode === "unmount_only" ? " mode-unmount" : "");
+    const modeButton = (value) =>
+      `<button type="button" data-pkg="${escapeHtml(app.pkg)}" data-mode="${value}" aria-pressed="${String(mode === value)}"${locked ? " disabled" : ""}>${escapeHtml(t(modeKeys[value]))}</button>`;
     return `
-      <label class="toggle-row app-row">
-        <input type="checkbox" role="switch" data-pkg="${escapeHtml(app.pkg)}"${excludedApps.has(app.pkg) && !locked ? " checked" : ""}${locked ? " disabled" : ""}>
+      <div class="app-row${modeClass}" data-pkg="${escapeHtml(app.pkg)}">
         <span class="avatar" aria-hidden="true">${escapeHtml(initial)}</span>
         <span class="app-text">
           <span class="app-title">
@@ -1062,8 +1123,10 @@ function renderApps() {
           ${app.label ? `<span class="app-pkg">${escapeHtml(app.pkg)}</span>` : ""}
           ${note ? `<span class="app-note">${escapeHtml(note)}</span>` : ""}
         </span>
-        <span class="switch" aria-hidden="true"></span>
-      </label>
+        <div class="segmented wide-3 app-mode" role="group" aria-label="${escapeHtml(title)}">
+          ${modeButton("none")}${modeButton("unmount_only")}${modeButton("exclude")}
+        </div>
+      </div>
     `;
   }).join("");
 }
@@ -1072,9 +1135,15 @@ function renderApps() {
 // from under the user's finger when the list re-sorts.
 function syncAppRows(packages) {
   packages.forEach((pkg) => {
-    const input = $("app-list").querySelector(`input[data-pkg="${CSS.escape(pkg)}"]`);
-    if (input) {
-      input.checked = excludedApps.has(pkg);
+    const row = $("app-list").querySelector(`.app-row[data-pkg="${CSS.escape(pkg)}"]`);
+    if (row) {
+      const app = userApps.find((item) => item.pkg === pkg) || { pkg, appId: null };
+      const mode = displayMode(app);
+      row.classList.toggle("mode-exclude", mode === "exclude");
+      row.classList.toggle("mode-unmount", mode === "unmount_only");
+      row.querySelectorAll("button[data-mode]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
+      });
     }
     const badge = $("app-list").querySelector(`[data-pending-for="${CSS.escape(pkg)}"]`);
     if (badge) {
@@ -1084,37 +1153,58 @@ function syncAppRows(packages) {
   renderAppCounts();
 }
 
-async function toggleApp(pkg, excluded) {
+async function setAppMode(pkg, mode) {
   const app = userApps.find((item) => item.pkg === pkg) || { pkg, appId: null };
   if (isLocked(app)) {
     return;
   }
   const group = groupOf(app);
   group.forEach((member) => {
-    if (excluded) {
+    if (mode === "exclude") {
       excludedApps.add(member);
+      unmountOnlyApps.delete(member);
+    } else if (mode === "unmount_only") {
+      unmountOnlyApps.add(member);
+      excludedApps.delete(member);
     } else {
       excludedApps.delete(member);
+      unmountOnlyApps.delete(member);
     }
   });
   syncAppRows(group);
 
   // Drop packages that are no longer installed so the list never holds invisible entries.
-  let written = "";
-  const result = await queueConfigWrite("exclude_apps", () => {
-    written = [...excludedApps]
+  // The two keys are written through the same chain, in order. Each saved set is only
+  // updated when its own write succeeded, so the UI always matches config.prop on disk.
+  let writtenExclude = "";
+  const excludeResult = await queueConfigWrite("exclude_apps", () => {
+    writtenExclude = [...excludedApps]
       .filter((p) => userPackages.has(p) && PACKAGE_RE.test(p))
       .sort()
       .join(",");
-    return written;
+    return writtenExclude;
+  });
+  let writtenUnmountOnly = "";
+  const unmountResult = await queueConfigWrite("unmount_only_apps", () => {
+    writtenUnmountOnly = [...unmountOnlyApps]
+      .filter((p) => userPackages.has(p) && PACKAGE_RE.test(p))
+      .sort()
+      .join(",");
+    return writtenUnmountOnly;
   });
 
-  if (result.code !== 0) {
+  if (excludeResult.code === 0) {
+    savedExcluded = new Set(writtenExclude ? writtenExclude.split(",") : []);
+  }
+  if (unmountResult.code === 0) {
+    savedUnmountOnly = new Set(writtenUnmountOnly ? writtenUnmountOnly.split(",") : []);
+  }
+  if (excludeResult.code !== 0 || unmountResult.code !== 0) {
     excludedApps = new Set(savedExcluded);
+    unmountOnlyApps = new Set(savedUnmountOnly);
     renderApps();
     showToast("save_failed", true);
     return;
   }
-  savedExcluded = new Set(written ? written.split(",") : []);
   showToast("saved");
 }
