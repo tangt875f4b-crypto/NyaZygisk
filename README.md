@@ -101,10 +101,14 @@ Telegram: [@NyaZygisk](t.me/NYAZYGISK)
 
 Modern systemless root solutions operate by creating overlay filesystems using [`mount`](https://man7.org/linux/man-pages/man8/mount.8.html) rather than directly modifying system partitions. The DenyList hides these modifications by controlling the [mount namespace](https://man7.org/linux/man-pages/man7/mount_namespaces.7.html) of each application process.
 
-| Application State | Mount Namespace Visibility | Use Case |
-| :--- | :--- | :--- |
-| **Granted Root Privileges** | Root solution mounts + module mounts | Trusted apps that require root access (e.g., advanced file managers). |
-| **On DenyList** | Clean, unmodified mount namespace | Apps that perform root detection. Root and module mounts are hidden. |
+Each app can be in one of four states. The DenyList itself lives in the root manager; the per-app mode lives in NyaZygisk's own config (`unmount_only_apps` / `exclude_apps` in `config.prop`) and is set from the App exclusion tab of this WebUI. Apps that hold root privileges (and the root manager itself) are never unmounted, whichever list they are on.
+
+| Mode | Zygisk modules | Mount namespace | Use case |
+| :--- | :--- | :--- | :--- |
+| **Normal** (default) | Load | Root solution mounts + module mounts | Apps that need modules and do not detect root. |
+| **Unmount only** (WebUI per-app mode) | Load | Clean, unmodified mount namespace | Apps that detect root but still need a module inside them (for example a game where an Xposed module must run). Behaves like the root manager's DenyList. |
+| **Excluded** (WebUI per-app mode) | Do not load | Clean if **Unmount for excluded apps** is on | Apps that must see no Zygisk modules at all. |
+| **On DenyList** (root manager) | Load | Clean, unmodified mount namespace | Apps that perform root detection. Same behavior as **Unmount only**, set in the root manager instead of this WebUI. |
 
 NyaZygisk uses two strategies to provide a clean mount namespace:
 

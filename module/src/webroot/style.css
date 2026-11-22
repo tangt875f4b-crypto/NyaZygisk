@@ -658,9 +658,22 @@ svg {
 }
 
 .app-row {
+  position: relative;
   min-height: 64px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-start;
   gap: 12px;
+  padding: 12px 0;
+}
+
+.app-row + .app-row {
+  border-top: 1px solid var(--line);
+}
+
+.app-row .app-mode {
+  flex: 1 1 100%;
 }
 
 .avatar {
@@ -678,7 +691,8 @@ svg {
   transition: background 0.2s var(--ease), color 0.2s var(--ease);
 }
 
-.app-row input:checked ~ .avatar {
+.app-row.mode-exclude .avatar,
+.app-row.mode-unmount .avatar {
   background: var(--accent-soft);
   color: var(--accent-text);
 }

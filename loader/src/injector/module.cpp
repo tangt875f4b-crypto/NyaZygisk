@@ -540,6 +540,14 @@ void ZygiskContext::app_specialize_pre() {
         flags |= DO_REVERT_UNMOUNT;
     }
 
+    // Apps on the unmount-only list load modules normally; only their module
+    // mounts are reverted, exactly like denylisted apps. Unlike PROCESS_EXCLUDED
+    // below, this never skips run_modules_pre().
+    if ((info_flags & PROCESS_UNMOUNT_ONLY) == PROCESS_UNMOUNT_ONLY) {
+        LOGV("[%s] is on the unmount-only list", process);
+        flags |= DO_REVERT_UNMOUNT;
+    }
+
     // Treat the WebView app-zygote as if it were on the denylist so that the isolated
     // processes it forks share the same clean mount namespace as every other isolated
     // process. The app-zygote's sandboxed children inherit its namespace directly, so

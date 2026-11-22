@@ -149,14 +149,17 @@ enum : uint32_t {
     PROCESS_GRANTED_ROOT = zygisk::StateFlag::PROCESS_GRANTED_ROOT,
     PROCESS_ON_DENYLIST = zygisk::StateFlag::PROCESS_ON_DENYLIST,
 
+    // Keep in sync with ProcessFlags in zygiskd/src/constants.rs. This flag is
+    // private: modules must not see it via getFlags(), so it is in PRIVATE_MASK.
+    PROCESS_UNMOUNT_ONLY = (1u << 25),
     PROCESS_EXCLUDED = (1u << 26),
     PROCESS_IS_MANAGER = (1u << 27),
     PROCESS_ROOT_IS_APATCH = (1u << 28),
     PROCESS_ROOT_IS_KSU = (1u << 29),
     PROCESS_ROOT_IS_MAGISK = (1u << 30),
 
-    PRIVATE_MASK = (PROCESS_EXCLUDED | PROCESS_IS_MANAGER | PROCESS_ROOT_IS_APATCH |
-                    PROCESS_ROOT_IS_KSU | PROCESS_ROOT_IS_MAGISK),
+    PRIVATE_MASK = (PROCESS_UNMOUNT_ONLY | PROCESS_EXCLUDED | PROCESS_IS_MANAGER |
+                    PROCESS_ROOT_IS_APATCH | PROCESS_ROOT_IS_KSU | PROCESS_ROOT_IS_MAGISK),
     UNMOUNT_MASK = PROCESS_ON_DENYLIST
 };
 
