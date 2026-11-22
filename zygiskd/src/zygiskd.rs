@@ -720,6 +720,9 @@ fn handle_get_process_flags(stream: &mut UnixStream) -> Result<()> {
                 flags |= ProcessFlags::PROCESS_ON_DENYLIST;
             }
         }
+        if u32::try_from(uid).ok().is_some_and(exclude::lookup_unmount_only) {
+            flags |= ProcessFlags::PROCESS_UNMOUNT_ONLY;
+        }
     }
 
     match root_impl::get() {

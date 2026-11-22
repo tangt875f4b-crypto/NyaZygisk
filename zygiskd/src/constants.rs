@@ -83,6 +83,9 @@ bitflags! {
         const PROCESS_GRANTED_ROOT = 1 << 0;
         /// The process is on the denylist and module mounts should be hidden.
         const PROCESS_ON_DENYLIST = 1 << 1;
+        /// The process is a user app on the unmount-only list: modules load normally
+        /// but module mounts are hidden from it, like the denylist.
+        const PROCESS_UNMOUNT_ONLY = 1 << 25;
         /// The process is a user app on the exclusion list and must not load any module.
         const PROCESS_EXCLUDED = 1 << 26;
         /// The process is the root manager application itself.
